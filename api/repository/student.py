@@ -2,57 +2,70 @@ from sqlalchemy.orm import Session
 from .. import models, schemas,database
 from fastapi import HTTPException,status
 from . import address
-from .. utilities import StudentUtility
+from .. utils import list_address_utils,student_List_Utils
 # from ..hashing import Hash
 
 
 databases = database.database
 
-def get_all(db: Session):
-    students = db.query(models.Student).all()
-    return students
+def get_all_students(db: Session,limit:int = 100,skip :int = 0):
+    students = db.query(models.Student).offset(skip).limit(limit).all()
+    student_list = []
+    for student in students:
+        address_list=list_address_utils(student.id,db)
+        student_list.append(student_List_Utils(student,address_list))
+    return student_list
 
-def create(request: schemas.Student,db:Session):
-    new_student = models.Student(**request.dict())
+def create(request: schemas.ShowStudent,db:Session):
+    new_student = models.Student(
+        student_name = request.student_name,
+        student_class = request.student_class,
+        student_session = request.student_session
+    )
     db.add(new_student)
-    db.commit()
+    db.commit()     
     db.refresh(new_student)
-    return StudentUtility.create(new_student.id,db)
+    if new_student:
+        if address.create(new_student.id, request.addresses,db):
+            return True
+    return False
+
+def get_student_by_id(id:int,db:Session):
+    student = db.query(models.Student).filter(models.Student.id == id).first()
+    address_list=list_address_utils(student.id,db)
+    student_detail=student_List_Utils(student,address_list)
+    if not student_detail:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Student with the id {id} is not available")
+    return student_detail
 
 def destroy(id:int,db: Session):
     student = db.query(models.Student).filter(models.Student.id == id)
-
-    if not student.first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"Student with id {id} not found")
-
+    addresses = db.query(models.Address).filter(models.Address.s_id == id)
+    for add in addresses:
+        address.destroy(add.id,db)
     student.delete(synchronize_session=False)
     db.commit()
-    return 'done'
+    return True
 
 
 def update(id:int,request:schemas.StudentBase, db:Session):
-    student = db.get(models.Student, id)
+    student = db.query(models.Student).filter(models.Student.id == id)
     if not student:
         raise HTTPException(status_code=404, detail=f"Student with {id} not found")
-    student_data = request.dict(exclude_unset=True)
-    for key, value in student_data.items():
-        setattr(student, key, value)
-    db.add(student)
+    update_data = {
+        "student_name" : request.student_name,
+		"student_class" : request.student_class,
+		"student_session" : request.student_session
+    }
+    student.update(update_data)
     db.commit()
-    db.refresh(student)
-    student_status = StudentUtility.change(id,db)
-    if student_status == False:
-        StudentUtility.create(id,db)
-        return 'updated'
-    return 'updated'
+    if student:
+        if address.update(id, request.addresses,db):
+            return True
+    return False 
 
 
   
-def show(id:int,db:Session):
-    student = db.query(models.Student).filter(models.Student.id == id).first()
-    if not student:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"User with the id {id} is not available")
-    return student
+
 

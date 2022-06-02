@@ -25,8 +25,4 @@ class Student(Base):
     student_name = Column(String(255))  
     student_class = Column(Integer)
     student_session = Column(String(16))
-    address_line1 = Column(String(255))
-    address_line2= Column(String(255))
-    city= Column(String(50))
-    pin= Column(Integer) 
     addresses = relationship('Address', back_populates="owner")
